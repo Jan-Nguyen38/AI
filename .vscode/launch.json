@@ -1,0 +1,109 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "debugpy",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/rag-chatbot",
+      "python": "${workspaceFolder}/rag-chatbot/.venv/Scripts/python.exe",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "name": "Chatbot: run server (debug)",
+      "module": "uvicorn",
+      "args": [
+        "app:app",
+        "--port",
+        "8000"
+      ],
+      "env": {
+        "LOG_LEVEL": "DEBUG"
+      },
+      "jinja": true
+    },
+    {
+      "type": "debugpy",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/rag-chatbot",
+      "python": "${workspaceFolder}/rag-chatbot/.venv/Scripts/python.exe",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "name": "Chatbot: ingest sample_docs",
+      "module": "rag.ingest",
+      "args": [
+        "sample_docs"
+      ],
+      "env": {
+        "LOG_LEVEL": "DEBUG"
+      }
+    },
+    {
+      "type": "debugpy",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/rag-chatbot",
+      "python": "${workspaceFolder}/rag-chatbot/.venv/Scripts/python.exe",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "name": "Chatbot: ingest a file or folder...",
+      "module": "rag.ingest",
+      "args": [
+        "${input:ingestPath}"
+      ],
+      "env": {
+        "LOG_LEVEL": "DEBUG"
+      }
+    },
+    {
+      "type": "debugpy",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/rag-chatbot",
+      "python": "${workspaceFolder}/rag-chatbot/.venv/Scripts/python.exe",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "name": "Chatbot: check Hugging Face models",
+      "module": "rag.hf_models"
+    },
+    {
+      "type": "debugpy",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/rag-chatbot",
+      "python": "${workspaceFolder}/rag-chatbot/.venv/Scripts/python.exe",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "name": "Chatbot: run tests",
+      "module": "pytest",
+      "args": [
+        "-q",
+        "tests"
+      ],
+      "env": {
+        "EMBED_BACKEND": "hash"
+      }
+    },
+    {
+      "type": "debugpy",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/rag-chatbot",
+      "python": "${workspaceFolder}/rag-chatbot/.venv/Scripts/python.exe",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "name": "Chatbot: debug a library too (justMyCode off)",
+      "module": "uvicorn",
+      "args": [
+        "app:app",
+        "--port",
+        "8000"
+      ],
+      "env": {
+        "LOG_LEVEL": "DEBUG"
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "ingestPath",
+      "type": "promptString",
+      "description": "File, folder or URL to add (relative to rag-chatbot)",
+      "default": "sample_docs"
+    }
+  ]
+}

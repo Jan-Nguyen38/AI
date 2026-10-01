@@ -1,0 +1,25 @@
+Lumen Robotics - Product FAQ for the Atlas R2 warehouse robot (sample, fictional)
+
+What does the Atlas R2 do?
+The Atlas R2 is an autonomous mobile robot that moves shelves and totes in warehouses. It carries up to 600 kg and navigates with lidar and cameras, without floor markers.
+
+How long does the battery last?
+A full charge gives about 10 hours of normal operation. The robot docks itself when the battery drops to 15 percent. Charging from 15 to 90 percent takes 55 minutes.
+
+How fast does it move?
+Top speed is 2.0 metres per second when empty and 1.5 metres per second when loaded. In zones marked as shared with people, speed is capped at 1.0 metre per second.
+
+What does it cost?
+The Atlas R2 is sold as a subscription: 1,900 USD per robot per month on a 3-year contract, including maintenance and software updates. A one-time setup fee of 12,000 USD per site covers mapping and integration.
+
+Which warehouse systems does it integrate with?
+It has ready-made connectors for SAP EWM, Manhattan WMS and Blue Yonder. Other systems can use the REST API and webhooks.
+
+What safety certifications does it have?
+The Atlas R2 is certified to ISO 3691-4 and has CE marking. Emergency stop buttons are on all four sides.
+
+How is it maintained?
+Remote diagnostics run continuously. A technician visits every 6 months for preventive maintenance. Spare parts are delivered within 48 hours in the EU and US.
+
+What is the warranty?
+Hardware is covered for the full subscription term. Damage from misuse, such as overloading beyond 600 kg, is not covered.
