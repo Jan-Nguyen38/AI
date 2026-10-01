@@ -1,5 +1,16 @@
+# Secrets and local data
 .env
 data/
+
+# Python
 .venv/
 __pycache__/
 *.pyc
+.pytest_cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+ # debug log files
+*.log
+launch.json
