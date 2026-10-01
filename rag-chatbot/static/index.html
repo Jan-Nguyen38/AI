@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Docs Chat</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e4e4df;
+    --accent: #c15f3c; --accent-soft: #f6e6df; --user: #ecebe6; --danger: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1b1b19; --panel: #242422; --text: #ecebe6; --muted: #a3a29c; --line: #3a3a37;
+            --accent: #e08a68; --accent-soft: #3d2a22; --user: #2f2f2c; --danger: #f2b8b5; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+  .app { display: grid; grid-template-columns: 300px 1fr; height: 100vh; }
+  aside { border-right: 1px solid var(--line); background: var(--panel); padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+  h1 { font-size: 17px; margin: 0; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 6px 0 0; }
+  .drop { border: 1.5px dashed var(--line); border-radius: 10px; padding: 16px; text-align: center; color: var(--muted); cursor: pointer; }
+  .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+  .row { display: flex; gap: 6px; }
+  input[type=text], textarea { flex: 1; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  button { font: inherit; border: 0; border-radius: 8px; padding: 8px 12px; background: var(--accent); color: #fff; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--muted); padding: 2px 6px; }
+  button:disabled { opacity: .5; cursor: default; }
+  .docs { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+  .docs li { display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 6px; background: var(--bg); font-size: 13px; }
+  .docs li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .docs small { color: var(--muted); }
+  .note { font-size: 13px; color: var(--muted); }
+  .note.err { color: var(--danger); }
+  main { display: flex; flex-direction: column; min-width: 0; }
+  #log { flex: 1; overflow-y: auto; padding: 24px max(16px, calc((100% - 760px) / 2)); display: flex; flex-direction: column; gap: 18px; }
+  .msg.user { align-self: flex-end; background: var(--user); padding: 10px 14px; border-radius: 14px; max-width: 80%; white-space: pre-wrap; }
+  .msg.bot { max-width: 100%; }
+  .msg.bot .body p { margin: 0 0 8px; }
+  .msg.bot .err { color: var(--danger); }
+  .cite { display: inline-block; font-size: 11px; line-height: 16px; min-width: 18px; text-align: center; padding: 0 4px; margin: 0 1px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); cursor: pointer; vertical-align: 2px; }
+  .sources { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .sources details { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; background: var(--panel); font-size: 13px; }
+  .sources summary { cursor: pointer; }
+  .sources pre { white-space: pre-wrap; font: 13px/1.5 inherit; font-family: inherit; color: var(--muted); margin: 6px 0 0; }
+  .empty { margin: auto; text-align: center; color: var(--muted); max-width: 420px; }
+  form.ask { display: flex; gap: 8px; padding: 12px max(16px, calc((100% - 760px) / 2)) 20px; border-top: 1px solid var(--line); background: var(--panel); }
+  form.ask textarea { resize: none; height: 44px; max-height: 160px; }
+  .cursor::after { content: "▍"; animation: blink 1s steps(1) infinite; color: var(--accent); }
+  @keyframes blink { 50% { opacity: 0; } }
+  @media (max-width: 760px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; height: auto; min-height: 100vh; }
+    aside { border-right: 0; border-bottom: 1px solid var(--line); max-height: 40vh; }
+    main { height: 60vh; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <h1>Docs Chat</h1>
+    <div id="drop" class="drop">Drop PDF, Word, text or HTML files here, or click to choose
+      <input id="file" type="file" multiple accept=".pdf,.docx,.txt,.md,.html,.htm" hidden>
+    </div>
+    <div class="row">
+      <input id="url" type="text" placeholder="https://… add a web page">
+      <button id="addUrl">Add</button>
+    </div>
+    <div id="status" class="note"></div>
+    <h2>Documents</h2>
+    <ul id="docs" class="docs"></ul>
+    <div class="note" id="model"></div>
+    <button class="ghost" id="clear" style="align-self:flex-start">Clear chat</button>
+  </aside>
+  <main>
+    <div id="log"><div class="empty" id="empty">Ask a question about your documents. Answers cite the passages they come from, and the bot says when the documents don't cover something.</div></div>
+    <form class="ask" id="ask">
+      <textarea id="q" placeholder="Ask about your documents…" autofocus></textarea>
+      <button id="send">Send</button>
+    </form>
+  </main>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+let history = [];
+try { history = JSON.parse(localStorage.getItem("rag-history") || "[]"); } catch (_) {}
+const save = () => { try { localStorage.setItem("rag-history", JSON.stringify(history)); } catch (_) {} };
+
+function esc(s) { return s.replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function render(text) {
+  let html = esc(text)
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\[(\d+)\]/g, '<span class="cite" data-n="$1">$1</span>');
+  return html.split(/\n{2,}/).map((p) => "<p>" + p.replace(/\n/g, "<br>") + "</p>").join("");
+}
+
+function addUser(text) {
+  $("empty")?.remove();
+  const d = document.createElement("div"); d.className = "msg user"; d.textContent = text;
+  $("log").appendChild(d); d.scrollIntoView({block: "end"});
+}
+function addBot() {
+  const d = document.createElement("div"); d.className = "msg bot";
+  d.innerHTML = '<div class="body cursor"></div><div class="sources"></div>';
+  $("log").appendChild(d); return d;
+}
+function renderSources(el, sources) {
+  const box = el.querySelector(".sources"); box.innerHTML = "";
+  for (const s of sources) {
+    const det = document.createElement("details"); det.id = "";
+    det.dataset.n = s.id;
+    det.innerHTML = `<summary>[${s.id}] ${esc(s.document)}${s.page ? `, page ${s.page}` : ""}</summary><pre>${esc(s.text)}</pre>`;
+    box.appendChild(det);
+  }
+  el.querySelectorAll(".cite").forEach((c) => c.onclick = () => {
+    const det = box.querySelector(`details[data-n="${c.dataset.n}"]`);
+    if (det) { det.open = true; det.scrollIntoView({block: "nearest", behavior: "smooth"}); }
+  });
+}
+function replay() {
+  for (const m of history) {
+    if (m.role === "user") addUser(m.content);
+    else { const el = addBot(); const b = el.querySelector(".body"); b.classList.remove("cursor"); b.innerHTML = render(m.content); renderSources(el, m.sources || []); }
+  }
+}
+
+async function ask(question) {
+  addUser(question);
+  const el = addBot(), body = el.querySelector(".body");
+  $("send").disabled = true;
+  let text = "", sources = [], failed = false;
+  try {
+    const resp = await fetch("/api/chat", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({question, history: history.map(({role, content}) => ({role, content}))})});
+    if (!resp.ok) throw new Error((await resp.json()).detail?.[0]?.msg || resp.statusText);
+    const reader = resp.body.getReader(), dec = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const {value, done} = await reader.read(); if (done) break;
+      buf += dec.decode(value, {stream: true});
+      let i;
+      while ((i = buf.indexOf("\n\n")) >= 0) {
+        const line = buf.slice(0, i); buf = buf.slice(i + 2);
+        if (!line.startsWith("data: ")) continue;
+        const ev = JSON.parse(line.slice(6));
+        if (ev.type === "text") { text += ev.text; body.innerHTML = render(text); }
+        else if (ev.type === "done") { sources = ev.sources; }
+        else if (ev.type === "error") { failed = true; body.innerHTML += `<p class="err">${esc(ev.message)}</p>`; }
+      }
+      $("log").scrollTop = $("log").scrollHeight;
+    }
+  } catch (e) { failed = true; body.innerHTML += `<p class="err">${esc(String(e.message || e))}</p>`; }
+  body.classList.remove("cursor");
+  renderSources(el, sources);
+  if (!failed) { history.push({role: "user", content: question}, {role: "assistant", content: text, sources}); save(); }
+  $("send").disabled = false;
+}
+
+$("ask").onsubmit = (e) => { e.preventDefault(); const q = $("q").value.trim(); if (!q) return; $("q").value = ""; ask(q); };
+$("q").onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("ask").requestSubmit(); } };
+$("clear").onclick = () => { history = []; save(); $("log").innerHTML = '<div class="empty" id="empty">Chat cleared. Ask a question about your documents.</div>'; };
+
+function status(msg, err) { $("status").textContent = msg; $("status").className = "note" + (err ? " err" : ""); }
+async function loadDocs() {
+  const r = await fetch("/api/documents"); const data = await r.json();
+  $("model").textContent = `Model: ${data.model}`;
+  const ul = $("docs"); ul.innerHTML = "";
+  if (!data.documents.length) ul.innerHTML = '<li class="note">No documents yet</li>';
+  for (const d of data.documents) {
+    const li = document.createElement("li");
+    li.innerHTML = `<span title="${esc(d.source)}">${esc(d.name)} <small>${d.chunks} chunks</small></span>`;
+    const del = document.createElement("button"); del.className = "ghost"; del.textContent = "✕"; del.title = "Remove";
+    del.onclick = async () => { await fetch(`/api/documents/${d.id}`, {method: "DELETE"}); loadDocs(); };
+    li.appendChild(del); ul.appendChild(li);
+  }
+}
+async function handleResult(r) {
+  const data = await r.json();
+  if (!r.ok) return status(data.detail || "Upload failed", true);
+  const errs = data.errors.map((e) => `${e.name}: ${e.error}`).join("; ");
+  status(`Added ${data.added.length} document(s).` + (errs ? ` Skipped ${errs}` : ""), !!errs);
+  loadDocs();
+}
+async function upload(files) {
+  if (!files.length) return;
+  status(`Indexing ${files.length} file(s)…`);
+  const fd = new FormData(); for (const f of files) fd.append("files", f);
+  handleResult(await fetch("/api/documents", {method: "POST", body: fd}));
+}
+$("drop").onclick = () => $("file").click();
+$("file").onchange = (e) => upload(e.target.files);
+$("drop").ondragover = (e) => { e.preventDefault(); $("drop").classList.add("over"); };
+$("drop").ondragleave = () => $("drop").classList.remove("over");
+$("drop").ondrop = (e) => { e.preventDefault(); $("drop").classList.remove("over"); upload(e.dataTransfer.files); };
+$("addUrl").onclick = async () => {
+  const url = $("url").value.trim(); if (!url) return;
+  status("Fetching page…");
+  handleResult(await fetch("/api/documents/url", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({url})}));
+  $("url").value = "";
+};
+
+replay(); loadDocs();
+</script>
+</body>
+</html>
