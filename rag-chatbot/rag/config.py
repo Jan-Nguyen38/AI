@@ -11,7 +11,7 @@ def _load_dotenv() -> None:
     env_file = ROOT / ".env"
     if not env_file.exists():
         return
-    for line in env_file.read_text().splitlines():
+    for line in env_file.read_text(encoding="utf-8-sig").splitlines():  # Notepad may add a BOM
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -22,8 +22,20 @@ def _load_dotenv() -> None:
 _load_dotenv()
 
 
+def _default_provider() -> str:
+    # Use Hugging Face when only an HF token is set, Claude otherwise.
+    if os.getenv("HF_TOKEN") and not os.getenv("ANTHROPIC_API_KEY"):
+        return "huggingface"
+    return "anthropic"
+
+
 @dataclass(frozen=True)
 class Settings:
+    # "anthropic" (Claude) or "huggingface" (open models via Hugging Face Inference Providers)
+    llm_provider: str = os.getenv("LLM_PROVIDER", _default_provider()).strip().lower()
+    hf_token: str = os.getenv("HF_TOKEN", "")
+    hf_model: str = os.getenv("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct")
+    hf_provider: str = os.getenv("HF_PROVIDER", "auto")
     claude_model: str = os.getenv("CLAUDE_MODEL", "claude-opus-5-5")
     # Chat Q&A does well at low effort; raise to "medium"/"high" for harder documents.
     claude_effort: str = os.getenv("CLAUDE_EFFORT", "low")

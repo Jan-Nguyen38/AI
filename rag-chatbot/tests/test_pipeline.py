@@ -15,6 +15,7 @@ import pytest  # noqa: E402
 
 from rag.chat import IDK, ChatEngine, cited_ids  # noqa: E402
 from rag.chunker import split_text  # noqa: E402
+from rag.llm import ClaudeLLM, HuggingFaceLLM  # noqa: E402
 from rag.loaders import load_path  # noqa: E402
 from rag.store import VectorStore  # noqa: E402
 
@@ -85,7 +86,7 @@ def test_index_persists_and_replaces_same_name(store, tmp_path):
 
 def test_answer_streams_text_and_returns_cited_sources(store):
     client = FakeClient("A full charge lasts about 10 hours [1].")
-    events = list(ChatEngine(store, client).answer_stream("How long does the battery last?"))
+    events = list(ChatEngine(store, ClaudeLLM(client)).answer_stream("How long does the battery last?"))
     text = "".join(e["text"] for e in events if e["type"] == "text")
     done = events[-1]
     assert text == "A full charge lasts about 10 hours [1]."
@@ -98,7 +99,7 @@ def test_answer_streams_text_and_returns_cited_sources(store):
 def test_unrelated_question_says_idk_without_calling_claude(store):
     client = FakeClient("should not be used")
     for q in ["Quelle est la recette du pot-au-feu ?", "What's the best pizza in Naples?"]:
-        events = list(ChatEngine(store, client).answer_stream(q))
+        events = list(ChatEngine(store, ClaudeLLM(client)).answer_stream(q))
         assert events[0]["text"] == IDK, q
     assert events[-1] == {"type": "done", "sources": [], "grounded": False}
     assert client.calls == []
@@ -110,11 +111,47 @@ def test_follow_up_uses_history(store):
         {"role": "user", "content": "Tell me about the Atlas R2 warehouse robot subscription"},
         {"role": "assistant", "content": "It is an autonomous mobile robot [1]."},
     ]
-    events = list(ChatEngine(store, client).answer_stream("How much is it per month?", history))
+    events = list(ChatEngine(store, ClaudeLLM(client)).answer_stream("How much is it per month?", history))
     assert events[-1]["type"] == "done"
     msgs = client.calls[0]["messages"]
     assert [m["role"] for m in msgs] == ["user", "assistant", "user"]
     assert "product_faq.txt" in msgs[-1]["content"]
+
+
+class FakeHFClient:
+    def __init__(self, reply):
+        self.reply = reply
+        self.calls = []
+
+    def chat_completion(self, **kwargs):
+        self.calls.append(kwargs)
+        for i in range(0, len(self.reply), 5):
+            delta = SimpleNamespace(content=self.reply[i : i + 5])
+            yield SimpleNamespace(choices=[SimpleNamespace(delta=delta)])
+
+
+def test_hugging_face_provider_streams_with_system_prompt(store, monkeypatch):
+    from dataclasses import replace
+
+    from rag import llm
+
+    monkeypatch.setattr(llm, "settings", replace(llm.settings, hf_token="hf_test"))
+    client = FakeHFClient("Up to 5 days can be carried over [1].")
+    events = list(ChatEngine(store, HuggingFaceLLM(client)).answer_stream("How many vacation days carry over?"))
+    assert "".join(e["text"] for e in events if e["type"] == "text") == "Up to 5 days can be carried over [1]."
+    assert events[-1]["sources"][0]["document"] == "employee_handbook.md"
+    msgs = client.calls[0]["messages"]
+    assert msgs[0]["role"] == "system" and msgs[-1]["role"] == "user"
+
+
+def test_hugging_face_without_token_reports_error(store, monkeypatch):
+    from dataclasses import replace
+
+    from rag import llm
+
+    monkeypatch.setattr(llm, "settings", replace(llm.settings, hf_token=""))
+    events = list(ChatEngine(store, HuggingFaceLLM(FakeHFClient("x"))).answer_stream("How many vacation days carry over?"))
+    assert events[-1]["type"] == "error" and "HF_TOKEN" in events[-1]["message"]
 
 
 def test_cited_ids():
@@ -128,7 +165,7 @@ def test_api_end_to_end(tmp_path, monkeypatch):
 
     s = VectorStore(tmp_path)
     monkeypatch.setattr(app_module, "store", s)
-    monkeypatch.setattr(app_module, "engine", ChatEngine(s, FakeClient("Core hours are 10:00 to 15:00 [1].")))
+    monkeypatch.setattr(app_module, "engine", ChatEngine(s, ClaudeLLM(FakeClient("Core hours are 10:00 to 15:00 [1]."))))
     c = TestClient(app_module.app)
 
     with open(SAMPLES / "employee_handbook.md", "rb") as f:

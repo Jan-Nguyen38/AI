@@ -6,9 +6,8 @@ import re
 from collections.abc import Iterator
 from html import escape
 
-import anthropic
-
 from .config import settings
+from .llm import LLMError, get_llm
 from .store import Hit, VectorStore
 
 IDK = "I don't know based on the documents I have."
@@ -54,15 +53,9 @@ def cited_ids(text: str) -> list[int]:
 
 
 class ChatEngine:
-    def __init__(self, store: VectorStore, client: anthropic.Anthropic | None = None):
+    def __init__(self, store: VectorStore, llm=None):
         self.store = store
-        self._client = client
-
-    @property
-    def client(self) -> anthropic.Anthropic:
-        if self._client is None:
-            self._client = anthropic.Anthropic()
-        return self._client
+        self.llm = llm or get_llm()
 
     def answer_stream(self, question: str, history: list[dict] | None = None) -> Iterator[dict]:
         """Yield events: {"type": "text", "text"}, then {"type": "done", "sources": [...], "grounded": bool}.
@@ -81,7 +74,7 @@ class ChatEngine:
             return
 
         messages = [{"role": m["role"], "content": m["content"]} for m in history]
-        # The API needs alternating turns that start with the user.
+        # Chat APIs need alternating turns that start with the user.
         while messages and messages[0]["role"] != "user":
             messages.pop(0)
         if messages and messages[-1]["role"] == "user":
@@ -90,35 +83,11 @@ class ChatEngine:
 
         full_text = ""
         try:
-            with self.client.beta.messages.stream(
-                model=settings.claude_model,
-                max_tokens=16000,
-                system=SYSTEM_PROMPT,
-                messages=messages,
-                output_config={"effort": settings.claude_effort},
-                # Retry on another model if the main one declines for a safety reason.
-                betas=["server-side-fallback-2026-07-01"],
-                fallbacks="default",
-            ) as stream:
-                for text in stream.text_stream:
-                    full_text += text
-                    yield {"type": "text", "text": text}
-                final = stream.get_final_message()
-        except anthropic.AuthenticationError:
-            yield {"type": "error", "message": "Claude API key is missing or invalid. Set ANTHROPIC_API_KEY in .env."}
-            return
-        except anthropic.RateLimitError:
-            yield {"type": "error", "message": "Rate limited by the Claude API. Wait a moment and try again."}
-            return
-        except anthropic.APIStatusError as e:
-            yield {"type": "error", "message": f"Claude API error {e.status_code}: {e.message}"}
-            return
-        except anthropic.APIConnectionError:
-            yield {"type": "error", "message": "Couldn't reach the Claude API. Check your network connection."}
-            return
-
-        if final.stop_reason == "refusal":
-            yield {"type": "error", "message": "Claude declined to answer this question."}
+            for text in self.llm.stream(SYSTEM_PROMPT, messages):
+                full_text += text
+                yield {"type": "text", "text": text}
+        except LLMError as e:
+            yield {"type": "error", "message": str(e)}
             return
 
         ids = cited_ids(full_text)

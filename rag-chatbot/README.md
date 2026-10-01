@@ -1,33 +1,64 @@
 # RAG Chatbot (v1)
 
-Chat with your own documents. Upload PDFs, Word files, text or web pages, then ask questions. Answers come only from your documents, cite the passages they use, and say "I don't know" when the documents don't cover the question.
+Chat with your own documents. Upload PDFs, Word files, text or web pages, then ask questions. Answers are written by an open model on Hugging Face or by Claude, come only from your documents, cite the passages they use, and say "I don't know" when the documents don't cover the question.
 
 ## What's in this version
 
 - Upload PDF, `.docx`, `.txt`, `.md`, `.html` files, or add a web page by URL
 - Documents are split into overlapping chunks and indexed with a local embedding model (no extra account needed)
 - Search by meaning, not just keywords
-- Answers from Claude, grounded in the retrieved passages, with clickable `[1]` citations that open the source text
+- Answers from a Hugging Face model or Claude, grounded in the retrieved passages, with clickable `[1]` citations that open the source text
 - Chat history, so follow-up questions keep context (kept in your browser)
 - "I don't know" when nothing relevant is found (no model call is made) or when the passages don't answer the question
 - Streaming answers, and a document list where you can remove documents
 
-## Run it
+## Pick the model that writes answers
 
-You need Python 3.10+ and a Claude API key from https://platform.claude.com.
+| Option | What you need | Cost |
+|---|---|---|
+| **Hugging Face** (open model, default `Qwen/Qwen2.5-7B-Instruct`) | A free account at https://huggingface.co and an access token | Free monthly credits, then pay as you go |
+| **Claude** (`claude-opus-5-5`) | An API key from https://platform.claude.com. A Claude.ai subscription doesn't include API access | Pay per use |
+
+To get a Hugging Face token: sign in, go to https://huggingface.co/settings/tokens, click **Create new token**, choose **Fine-grained**, tick **Make calls to Inference Providers**, create it and copy the value (it starts with `hf_`).
+
+## Run it on Windows (PowerShell)
+
+You need Python 3.10 or newer (`python --version`). In VS Code, open the repository folder and a PowerShell terminal, then:
+
+```powershell
+cd rag-chatbot
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+copy .env.example .env
+notepad .env
+```
+
+In `.env`, paste your token after `HF_TOKEN=` (for Claude, use option B instead) and save. Then:
+
+```powershell
+python -m rag.ingest sample_docs
+uvicorn app:app --reload
+```
+
+Open http://localhost:8000.
+
+If `Activate.ps1` is blocked with "running scripts is disabled", run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, then try again.
+
+## Run it on macOS or Linux
 
 ```bash
 cd rag-chatbot
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env          # then put your key after ANTHROPIC_API_KEY=
-python -m rag.ingest sample_docs/   # optional: load the demo documents
+cp .env.example .env          # then fill in HF_TOKEN or ANTHROPIC_API_KEY
+python -m rag.ingest sample_docs/
 uvicorn app:app --reload
 ```
 
-Open http://localhost:8000. The first ingest downloads the embedding model (about 130 MB) from Hugging Face; later runs use the cached copy.
+The first ingest downloads the embedding model (about 130 MB) from Hugging Face; later runs use the cached copy.
 
-The only secret is `ANTHROPIC_API_KEY`. Keep it in `.env` (ignored by git) or your shell environment, never in code.
+Keep tokens and keys in `.env` (ignored by git) or your environment, never in code.
 
 ### Try these with the sample documents
 
@@ -55,13 +86,17 @@ Set these in `.env` or the environment.
 
 | Variable | Default | What it does |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | (required) | Your Claude API key |
+| `LLM_PROVIDER` | `huggingface` if only `HF_TOKEN` is set, else `anthropic` | Which model writes answers |
+| `HF_TOKEN` | | Hugging Face access token (for `huggingface`) |
+| `HF_MODEL` | `Qwen/Qwen2.5-7B-Instruct` | Any chat model on Hugging Face Inference Providers, for example `meta-llama/Llama-3.1-8B-Instruct` (accept its license on the model page first) or `Qwen/Qwen2.5-72B-Instruct` for better answers |
+| `HF_PROVIDER` | `auto` | Which inference provider runs it; `auto` picks one for you |
+| `ANTHROPIC_API_KEY` | | Claude API key (for `anthropic`) |
 | `CLAUDE_MODEL` | `claude-opus-5-5` | Model that writes answers |
 | `CLAUDE_EFFORT` | `low` | `low`, `medium`, `high`, `xhigh` or `max`. Raise it for harder documents; it costs more and is slower |
 | `EMBED_MODEL` | `BAAI/bge-small-en-v1.5` | Any [fastembed model](https://qdrant.github.io/fastembed/examples/Supported_Models/). For Vietnamese or other languages try `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` |
 | `EMBED_BACKEND` | `fastembed` | `hash` is a keyword-only fallback that works offline, for testing |
-| `TOP_K` | `5` | Passages sent to Claude per question |
-| `MIN_SCORE` | `0.45` | Passages below this similarity are ignored. If none pass, the bot says it doesn't know without calling Claude. Lower it if good questions get "I don't know" |
+| `TOP_K` | `5` | Passages sent to the model per question |
+| `MIN_SCORE` | `0.45` | Passages below this similarity are ignored. If none pass, the bot says it doesn't know without calling the model. Lower it if good questions get "I don't know" |
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | `900` / `150` | Chunk length and overlap, in characters |
 | `DATA_DIR` | `./data` | Where the index is stored |
 
@@ -74,13 +109,13 @@ upload ─► loaders.py (text + PDF page numbers) ─► chunker.py (overlappin
        ─► embeddings.py (local vectors) ─► store.py (NumPy matrix + JSON on disk)
 
 question ─► store.search (cosine similarity, top K, minimum score)
-         ─► chat.py: numbered <source> blocks + chat history ─► Claude (streaming)
+         ─► chat.py: numbered <source> blocks + chat history ─► llm.py: Hugging Face or Claude (streaming)
          ─► answer with [n] citations ─► UI shows only the cited sources
 ```
 
-- `rag/chat.py` holds the system prompt. Claude is told to use only the sources, cite them, reply with an exact "I don't know" sentence when they don't answer, and treat document text as data, never as instructions.
+- `rag/chat.py` holds the system prompt. The model is told to use only the sources, cite them, reply with an exact "I don't know" sentence when they don't answer, and treat document text as data, never as instructions.
 - Follow-up questions are searched together with the previous question, so "how long does charging take?" still finds the robot FAQ.
-- Requests opt into server-side fallback (`fallbacks: "default"`), so if the main model declines a request for a safety reason, the API retries on another model in the same call.
+- With Claude, requests opt into server-side fallback (`fallbacks: "default"`), so if the main model declines a request for a safety reason, the API retries on another model in the same call.
 
 ## API
 
@@ -98,7 +133,7 @@ question ─► store.search (cosine similarity, top K, minimum score)
 pytest -q
 ```
 
-The tests run offline with the keyword embedder and a fake Claude client, so they need no key or network.
+The tests run offline with the keyword embedder and fake Claude and Hugging Face clients, so they need no key or network.
 
 ## Known limits of v1
 

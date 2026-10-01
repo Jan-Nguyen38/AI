@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from rag.chat import ChatEngine
-from rag.config import ROOT, settings
+from rag.config import ROOT
 from rag.loaders import load_bytes, load_url
 from rag.store import VectorStore
 
@@ -45,7 +45,7 @@ def index() -> FileResponse:
 
 @app.get("/api/documents")
 def list_documents() -> dict:
-    return {"documents": store.list_documents(), "model": settings.claude_model}
+    return {"documents": store.list_documents(), "model": engine.llm.name}
 
 
 @app.post("/api/documents")
