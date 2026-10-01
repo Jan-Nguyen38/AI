@@ -16,7 +16,7 @@ Chat with your own documents. Upload PDFs, Word files, text or web pages, then a
 
 | Option | What you need | Cost |
 |---|---|---|
-| **Hugging Face** (open model, default `Qwen/Qwen2.5-7B-Instruct`) | A free account at https://huggingface.co and an access token | Free monthly credits, then pay as you go |
+| **Hugging Face** (open models, picked automatically) | A free account at https://huggingface.co and an access token | Free monthly credits, then pay as you go |
 | **Claude** (`claude-opus-5-5`) | An API key from https://platform.claude.com. A Claude.ai subscription doesn't include API access | Pay per use |
 
 To get a Hugging Face token: sign in, go to https://huggingface.co/settings/tokens, click **Create new token**, choose **Fine-grained**, tick **Make calls to Inference Providers**, create it and copy the value (it starts with `hf_`).
@@ -42,6 +42,16 @@ uvicorn app:app --reload
 ```
 
 Open http://localhost:8000.
+
+### Which Hugging Face models work for me?
+
+Which models you can use depends on the inference providers enabled on your account (https://huggingface.co/settings/inference-providers). To see which ones answer with your token:
+
+```powershell
+python -m rag.hf_models
+```
+
+It tests each candidate with a tiny request and prints the `HF_MODEL=` line to put in `.env`. You can also browse https://huggingface.co/models?inference_provider=all&pipeline_tag=text-generation&sort=trending
 
 If `Activate.ps1` is blocked with "running scripts is disabled", run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, then try again.
 
@@ -88,7 +98,7 @@ Set these in `.env` or the environment.
 |---|---|---|
 | `LLM_PROVIDER` | `huggingface` if only `HF_TOKEN` is set, else `anthropic` | Which model writes answers |
 | `HF_TOKEN` | | Hugging Face access token (for `huggingface`) |
-| `HF_MODEL` | `Qwen/Qwen2.5-7B-Instruct` | Any chat model on Hugging Face Inference Providers, for example `meta-llama/Llama-3.1-8B-Instruct` (accept its license on the model page first) or `Qwen/Qwen2.5-72B-Instruct` for better answers |
+| `HF_MODEL` | `auto` | `auto` tries well-known chat models (`openai/gpt-oss-120b` first) and then trending ones until one is served by your enabled providers, and remembers it. Or name any chat model on Hugging Face Inference Providers |
 | `HF_PROVIDER` | `auto` | Which inference provider runs it; `auto` picks one for you |
 | `ANTHROPIC_API_KEY` | | Claude API key (for `anthropic`) |
 | `CLAUDE_MODEL` | `claude-opus-5-5` | Model that writes answers |

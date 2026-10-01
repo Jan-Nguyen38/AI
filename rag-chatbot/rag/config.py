@@ -34,7 +34,8 @@ class Settings:
     # "anthropic" (Claude) or "huggingface" (open models via Hugging Face Inference Providers)
     llm_provider: str = os.getenv("LLM_PROVIDER", _default_provider()).strip().lower()
     hf_token: str = os.getenv("HF_TOKEN", "")
-    hf_model: str = os.getenv("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct")
+    # "auto" tries well-known models until one is served by your enabled providers.
+    hf_model: str = os.getenv("HF_MODEL", "auto")
     hf_provider: str = os.getenv("HF_PROVIDER", "auto")
     claude_model: str = os.getenv("CLAUDE_MODEL", "claude-opus-5-5")
     # Chat Q&A does well at low effort; raise to "medium"/"high" for harder documents.

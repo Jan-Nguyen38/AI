@@ -119,12 +119,22 @@ def test_follow_up_uses_history(store):
 
 
 class FakeHFClient:
-    def __init__(self, reply):
+    def __init__(self, reply, unsupported=()):
         self.reply = reply
+        self.unsupported = set(unsupported)
         self.calls = []
 
     def chat_completion(self, **kwargs):
         self.calls.append(kwargs)
+        if kwargs["model"] in self.unsupported:
+            import httpx
+            from huggingface_hub.errors import HfHubHTTPError
+
+            response = httpx.Response(400, request=httpx.Request("POST", "https://router.huggingface.co"))
+            raise HfHubHTTPError("Bad request: model_not_supported by any provider you have enabled", response=response)
+        return self._chunks()
+
+    def _chunks(self):
         for i in range(0, len(self.reply), 5):
             delta = SimpleNamespace(content=self.reply[i : i + 5])
             yield SimpleNamespace(choices=[SimpleNamespace(delta=delta)])
@@ -135,13 +145,42 @@ def test_hugging_face_provider_streams_with_system_prompt(store, monkeypatch):
 
     from rag import llm
 
-    monkeypatch.setattr(llm, "settings", replace(llm.settings, hf_token="hf_test"))
+    monkeypatch.setattr(llm, "settings", replace(llm.settings, hf_token="hf_test", hf_model="org/model"))
     client = FakeHFClient("Up to 5 days can be carried over [1].")
     events = list(ChatEngine(store, HuggingFaceLLM(client)).answer_stream("How many vacation days carry over?"))
     assert "".join(e["text"] for e in events if e["type"] == "text") == "Up to 5 days can be carried over [1]."
     assert events[-1]["sources"][0]["document"] == "employee_handbook.md"
     msgs = client.calls[0]["messages"]
     assert msgs[0]["role"] == "system" and msgs[-1]["role"] == "user"
+
+
+def test_hugging_face_auto_skips_unsupported_models(store, monkeypatch):
+    from dataclasses import replace
+
+    from rag import llm
+
+    monkeypatch.setattr(llm, "settings", replace(llm.settings, hf_token="hf_test", hf_model="auto"))
+    monkeypatch.setattr(llm, "trending_chat_models", lambda token: [])
+    first, second = llm.HF_FALLBACK_MODELS[:2]
+    client = FakeHFClient("Up to 5 days [1].", unsupported={first})
+    engine = ChatEngine(store, HuggingFaceLLM(client))
+    events = list(engine.answer_stream("How many vacation days carry over?"))
+    assert events[-1]["type"] == "done"
+    assert [c["model"] for c in client.calls] == [first, second]
+    assert engine.llm.name == second
+    list(engine.answer_stream("How many vacation days carry over?"))
+    assert client.calls[-1]["model"] == second  # remembers the model that worked
+
+
+def test_hugging_face_fixed_model_unsupported_explains_fix(store, monkeypatch):
+    from dataclasses import replace
+
+    from rag import llm
+
+    monkeypatch.setattr(llm, "settings", replace(llm.settings, hf_token="hf_test", hf_model="org/missing"))
+    client = FakeHFClient("x", unsupported={"org/missing"})
+    events = list(ChatEngine(store, HuggingFaceLLM(client)).answer_stream("How many vacation days carry over?"))
+    assert events[-1]["type"] == "error" and "HF_MODEL=auto" in events[-1]["message"]
 
 
 def test_hugging_face_without_token_reports_error(store, monkeypatch):
