@@ -12,6 +12,7 @@ import argparse
 from pathlib import Path
 
 from .loaders import SUPPORTED_EXTENSIONS, load_path, load_url
+from .logs import setup_logging
 from .store import VectorStore
 
 
@@ -20,6 +21,7 @@ def main() -> None:
     parser.add_argument("inputs", nargs="*", help="Files, folders or URLs")
     parser.add_argument("--list", action="store_true", help="List indexed documents")
     args = parser.parse_args()
+    setup_logging()
 
     store = VectorStore()
     if args.list or not args.inputs:

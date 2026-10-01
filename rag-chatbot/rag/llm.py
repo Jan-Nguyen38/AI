@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 
 from .config import settings
+
+
+log = logging.getLogger("rag.llm")
 
 
 class LLMError(Exception):
@@ -127,6 +131,7 @@ class HuggingFaceLLM:
             raise LLMError("HF_TOKEN is missing. Create a token at huggingface.co/settings/tokens and put it in .env.")
         tried = []
         for model in self._candidates():
+            log.debug("Trying Hugging Face model %s (provider=%s)", model, settings.hf_provider)
             try:
                 chunks = self.client.chat_completion(
                     messages=[{"role": "system", "content": system}, *messages],
@@ -139,6 +144,8 @@ class HuggingFaceLLM:
                 for chunk in chunks:
                     if not started:
                         started = True
+                        if self._working_model != model:
+                            log.info("Using Hugging Face model %s", model)
                         self._working_model = model
                     if chunk.choices and chunk.choices[0].delta.content:
                         yield chunk.choices[0].delta.content
@@ -146,6 +153,7 @@ class HuggingFaceLLM:
             except HfHubHTTPError as e:
                 status = e.response.status_code if e.response is not None else None
                 if _is_model_unavailable(status, e):
+                    log.warning("Hugging Face model %s not available (HTTP %s), trying the next one", model, status)
                     # Nothing was streamed yet, so it's safe to move on to the next model.
                     tried.append(model)
                     continue
@@ -155,6 +163,7 @@ class HuggingFaceLLM:
                     raise LLMError("Your Hugging Face free inference credits are used up for this month.")
                 if status == 429:
                     raise LLMError("Rate limited by Hugging Face. Wait a moment and try again.")
+                log.error("Hugging Face HTTP %s with %s: %s", status, model, e)
                 raise LLMError(f"Hugging Face error with {model}: {e}")
             except (httpx.HTTPError, OSError) as e:
                 raise LLMError(f"Couldn't reach Hugging Face: {e}")

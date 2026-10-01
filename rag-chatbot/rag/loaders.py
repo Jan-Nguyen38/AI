@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import io
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
 from bs4 import BeautifulSoup
+
+log = logging.getLogger("rag.loaders")
 
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".html", ".htm"}
 
@@ -22,6 +25,7 @@ class Section:
 
 def load_bytes(name: str, data: bytes) -> list[Section]:
     ext = Path(name).suffix.lower()
+    log.debug("Loading %s (%d bytes)", name, len(data))
     if ext == ".pdf":
         return _load_pdf(data)
     if ext == ".docx":
@@ -39,6 +43,7 @@ def load_path(path: Path) -> list[Section]:
 
 def load_url(url: str) -> tuple[str, list[Section]]:
     """Fetch a web page and return (title, sections)."""
+    log.info("Fetching %s", url)
     resp = httpx.get(url, follow_redirects=True, timeout=30, headers={"User-Agent": "rag-chatbot/0.1"})
     resp.raise_for_status()
     if "application/pdf" in resp.headers.get("content-type", ""):
@@ -57,6 +62,7 @@ def _load_pdf(data: bytes) -> list[Section]:
         text = (page.extract_text() or "").strip()
         if text:
             sections.append(Section(text, page=i))
+    log.debug("PDF has %d pages, %d with text", len(reader.pages), len(sections))
     if not sections:
         raise ValueError("No text found in PDF. Scanned PDFs need OCR, which this version doesn't do yet.")
     return sections

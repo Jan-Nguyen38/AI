@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 import re
+import time
 from collections.abc import Iterator
 from html import escape
 
 from .config import settings
 from .llm import LLMError, get_llm
+from .logs import short
 from .store import Hit, VectorStore
+
+log = logging.getLogger("rag.chat")
 
 IDK = "I don't know based on the documents I have."
 
@@ -65,9 +70,17 @@ class ChatEngine:
         history = [m for m in (history or []) if m.get("role") in ("user", "assistant") and m.get("content")]
         history = history[-2 * settings.history_turns :]
 
-        hits = self.store.search(_retrieval_query(question, history))
+        t0 = time.perf_counter()
+        log.info("Question: %r (history: %d messages)", short(question), len(history))
+        query = _retrieval_query(question, history)
+        if query != question:
+            log.debug("Retrieval query includes previous question: %r", short(query))
+        hits = self.store.search(query)
         relevant = [h for h in hits if h.score >= settings.min_score]
+        best = f"{hits[0].score:.3f}" if hits else "n/a"
+        log.info("Retrieved %d passages, %d above MIN_SCORE=%.2f (best score %s)", len(hits), len(relevant), settings.min_score, best)
         if not relevant:
+            log.info("No passage is relevant enough, answering 'I don't know' without calling the model")
             # Nothing in the index is close enough: don't spend a model call to guess.
             yield {"type": "text", "text": IDK}
             yield {"type": "done", "sources": [], "grounded": False}
@@ -81,15 +94,29 @@ class ChatEngine:
             messages.pop()
         messages.append({"role": "user", "content": f"{_format_sources(relevant)}\n\nQuestion: {question}"})
 
+        log.debug("Prompt to model (%d messages, %d chars in last):\n%s", len(messages), len(messages[-1]["content"]), messages[-1]["content"])
+        log.info("Asking %s (%s)", type(self.llm).__name__, self.llm.name)
+        t_llm = time.perf_counter()
         full_text = ""
         try:
             for text in self.llm.stream(SYSTEM_PROMPT, messages):
                 full_text += text
                 yield {"type": "text", "text": text}
         except LLMError as e:
+            log.error("Model call failed after %.1fs: %s", time.perf_counter() - t_llm, e)
             yield {"type": "error", "message": str(e)}
+            return
+        except Exception:
+            log.exception("Unexpected error while generating the answer")
+            yield {"type": "error", "message": "Unexpected error while generating the answer. See the server log for details."}
             return
 
         ids = cited_ids(full_text)
         sources = [_source_payload(n, relevant[n - 1]) for n in ids if 1 <= n <= len(relevant)]
+        log.info(
+            "Answered with %s in %.1fs (model %.1fs): %d chars, cited %s%s",
+            self.llm.name, time.perf_counter() - t0, time.perf_counter() - t_llm, len(full_text), ids or "nothing",
+            ", said I don't know" if IDK in full_text else "",
+        )
+        log.debug("Answer: %s", full_text)
         yield {"type": "done", "sources": sources, "grounded": bool(sources) and IDK not in full_text}

@@ -1,0 +1,9 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/rag-chatbot/.venv/Scripts/python.exe",
+  "python.testing.pytestEnabled": true,
+  "python.testing.cwd": "${workspaceFolder}/rag-chatbot",
+  "python.testing.pytestArgs": [
+    "tests"
+  ],
+  "python.envFile": "${workspaceFolder}/rag-chatbot/.env"
+}

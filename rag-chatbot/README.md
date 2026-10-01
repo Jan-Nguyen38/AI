@@ -79,6 +79,48 @@ The `sample_docs/` folder holds three fictional documents for a made-up company,
 - Can I paste customer contracts into an AI tool?
 - What's the CEO's salary? (should say it doesn't know)
 
+## Debugging in VS Code
+
+The repository includes ready-made VS Code settings (in `.vscode/` at the repository root, and a copy in `rag-chatbot/.vscode/` if you open that folder on its own). They expect the virtual environment at `rag-chatbot\.venv` as created in the setup steps above, and the **Python** extension from Microsoft.
+
+1. Open the Run and Debug panel (`Ctrl+Shift+D`) and pick a configuration from the dropdown at the top:
+   - **Chatbot: run server (debug)** starts the app with detailed logs. Open http://localhost:8000.
+   - **Chatbot: ingest sample_docs** or **ingest a file or folder...** adds documents.
+   - **Chatbot: check Hugging Face models** lists models that work with your token.
+   - **Chatbot: run tests** runs the test suite.
+2. Click left of a line number to set a breakpoint, then press `F5`. Good places to start:
+   - `rag/chat.py`, inside `answer_stream`, to see the question, retrieved passages (`hits`, `relevant`) and the prompt (`messages`)
+   - `rag/llm.py`, inside `HuggingFaceLLM.stream`, to see each model attempt and its error
+   - `rag/store.py`, in `search`, to see similarity scores
+3. When it pauses, hover over variables or use the Variables panel. `F10` steps over a line, `F11` steps into a function, `F5` continues.
+
+Stop the server you started from PowerShell first, because both use port 8000.
+
+## Logs
+
+Logs print in the terminal where the server runs. Set the level in `.env`:
+
+```
+LOG_LEVEL=INFO    # default: each question, how many passages matched, the best score, which model answered, timing, errors
+LOG_LEVEL=DEBUG   # also every passage with its score, the full prompt sent to the model, the answer, and each Hugging Face model tried
+```
+
+The debug configurations above already use `DEBUG`. Tokens and API keys are never logged; the startup line only says whether they are set.
+
+Example at `DEBUG`:
+
+```
+08:45:51 INFO    rag.app: Ready: provider=huggingface model=auto embedder=fastembed:BAAI/bge-small-en-v1.5, 3 documents, HF_TOKEN set, ANTHROPIC_API_KEY not set
+08:45:51 INFO    rag.chat: Question: 'How long does the battery last?' (history: 0 messages)
+08:45:51 DEBUG   rag.store:   #1 score=0.712 product_faq.txt | What does the Atlas R2 do? The Atlas R2 is an autonomous…
+08:45:51 INFO    rag.chat: Retrieved 5 passages, 2 above MIN_SCORE=0.45 (best score 0.712)
+08:45:51 WARNING rag.llm: Hugging Face model openai/gpt-oss-120b not available (HTTP 400), trying the next one
+08:45:51 INFO    rag.llm: Using Hugging Face model openai/gpt-oss-20b
+08:45:52 INFO    rag.chat: Answered with openai/gpt-oss-20b in 1.4s (model 1.3s): 120 chars, cited [1]
+```
+
+If good questions get "I don't know", compare the `best score` in the log with `MIN_SCORE` and lower `MIN_SCORE` in `.env` if needed.
+
 ## Command line
 
 ```bash

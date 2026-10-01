@@ -7,6 +7,7 @@ Fine for thousands of chunks on one machine. Swap for a vector database
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 import uuid
@@ -19,6 +20,9 @@ from .chunker import split_text
 from .config import settings
 from .embeddings import embedder_id, get_embedder
 from .loaders import Section
+from .logs import short
+
+log = logging.getLogger("rag.store")
 
 
 @dataclass
@@ -61,6 +65,7 @@ class VectorStore:
         self.chunks = [Chunk(**c) for c in json.loads((self.dir / "chunks.json").read_text())]
         vec_path = self.dir / "vectors.npy"
         self.vectors = np.load(vec_path) if vec_path.exists() and self.chunks else None
+        log.info("Loaded index from %s: %d documents, %d chunks", self.dir, len(self.documents), len(self.chunks))
 
     def _save(self) -> None:
         (self.dir / "chunks.json").write_text(json.dumps([asdict(c) for c in self.chunks], ensure_ascii=False))
@@ -83,7 +88,9 @@ class VectorStore:
         if not new_chunks:
             raise ValueError(f"No text could be extracted from {name}.")
 
+        t0 = time.perf_counter()
         vectors = get_embedder().embed_documents([c.text for c in new_chunks])
+        log.debug("Embedded %d chunks of %s in %.2fs", len(new_chunks), name, time.perf_counter() - t0)
         with self._lock:
             for existing_id, doc in list(self.documents.items()):
                 if doc["name"] == name:
@@ -93,14 +100,17 @@ class VectorStore:
             info = {"id": doc_id, "name": name, "source": source or name, "chunks": len(new_chunks), "added_at": time.time()}
             self.documents[doc_id] = info
             self._save()
+        log.info("Indexed %s: %d chunks (avg %d chars)", name, len(new_chunks), sum(len(c.text) for c in new_chunks) // len(new_chunks))
         return info
 
     def remove_document(self, doc_id: str) -> bool:
         with self._lock:
             if doc_id not in self.documents:
                 return False
+            name = self.documents[doc_id]["name"]
             self._remove_locked(doc_id)
             self._save()
+            log.info("Removed %s", name)
             return True
 
     def _remove_locked(self, doc_id: str) -> None:
@@ -118,7 +128,12 @@ class VectorStore:
             q = get_embedder().embed_query(query)
             scores = self.vectors @ q  # vectors are normalized, so this is cosine similarity
             top = np.argsort(-scores)[:k]
-            return [Hit(self.chunks[i], float(scores[i])) for i in top]
+            hits = [Hit(self.chunks[i], float(scores[i])) for i in top]
+        log.debug("Search %r over %d chunks:", short(query, 80), len(self.chunks))
+        for rank, h in enumerate(hits, start=1):
+            page = f" p.{h.chunk.page}" if h.chunk.page else ""
+            log.debug("  #%d score=%.3f %s%s | %s", rank, h.score, h.chunk.doc_name, page, short(h.chunk.text, 90))
+        return hits
 
     def list_documents(self) -> list[dict]:
         return sorted(self.documents.values(), key=lambda d: d["added_at"])
