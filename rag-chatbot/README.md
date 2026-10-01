@@ -44,6 +44,8 @@ uvicorn app:app --reload
 Open http://localhost:8000.
 
 ### Which Hugging Face models work for me?
+### Which Hugging Face models work for me?
+
 
 Which models you can use depends on the inference providers enabled on your account (https://huggingface.co/settings/inference-providers). To see which ones answer with your token:
 
